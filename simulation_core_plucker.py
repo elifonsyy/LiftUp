@@ -18,6 +18,7 @@ import numba
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from datetime import datetime 
 import matplotlib.colors as mcolors
 
 
@@ -119,7 +120,7 @@ def generate_beam_from_counts(origin, theta_range, phi_range, n_theta, n_phi):
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. PLÜCKER PRECOMPUTE
 # ══════════════════════════════════════════════════════════════════════════════
-def precompute_plucker(A, B, C):
+def plucker_method(A, B, C):
     dAB = B - A;  mAB = np.cross(A, dAB)
     dBC = C - B;  mBC = np.cross(B, dBC)
     dCA = A - C;  mCA = np.cross(C, dCA)
@@ -136,7 +137,7 @@ def precompute_plucker(A, B, C):
 # ══════════════════════════════════════════════════════════════════════════════
 MAX_LEAF_TRIS = 8
 
-def build_bvh(A, B, C):
+def bvh_tree(A, B, C):
     num_tris  = A.shape[0]
     centroids = (A + B + C) / 3.0
     node_aabb = []
@@ -274,7 +275,7 @@ def run_simulation(rays_o, rays_d, A, B, C,
     current_rays_o = rays_o.copy()
     current_rays_d = rays_d.copy()
 
-    monitor = ResourceMonitor(interval=0.1)
+    monitor = ResourceMonitor(interval=0.01)
     monitor.start()
     total_sim_start = time.perf_counter()
 
@@ -343,42 +344,47 @@ def run_simulation(rays_o, rays_d, A, B, C,
     }
     return hit_counts, avg_angles, bounce_paths, resource_data
 
-def save_detailed_results_to_excel(hit_counts, avg_angles, n_theta, n_phi, filename="Simulasyon_Raporu.xlsx"):
+def save_detailed_results_to_excel(hit_counts, avg_angles, n_theta, n_phi, filename=None):
     """
-    Excel raporuna geliş/sekme açılarını ve toplam ışın bilgisini ekler.
-    """
-    import pandas as pd
-    
+    Excel raporuna detaylı istatistikleri (Min, Max, Varyans, Ort) ve 
+    ışın bilgilerini ekler.
+    """  
+    if filename is None:
+        zaman_damgasi = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"Isin_Analiz_Raporu_{zaman_damgasi}.xlsx"
+
     active_indices = np.where(hit_counts > 0)[0]
     if len(active_indices) == 0:
         print("⚠️ Kaydedilecek veri bulunamadı!")
         return
 
-    # 1. Üçgen Bazlı Detaylar (Geliş ve Sekme Açıları)
-    # Fiziksel olarak Geliş Açısı = Sekme Açısıdır.
+    # 1. Sayfa: Üçgen Bazlı Detaylı Liste
+    # Gelme açısı = Yansıma açısı (ayna yansıma prensibi)
     hit_data = {
         "Ucgen_ID": active_indices,
         "Vurus_Sayisi": hit_counts[active_indices],
-        "Ortalama_Gelis_Acisi_Deg": avg_angles[active_indices],
-        "Ortalama_Sekme_Acisi_Deg": avg_angles[active_indices] # Yansıma kuralı gereği aynıdır
+        "Ort_Gelis_Acisi_Deg": avg_angles[active_indices],
+        "Ort_Yansima_Acisi_Deg": avg_angles[active_indices] 
     }
     df_hits = pd.DataFrame(hit_data).sort_values(by="Vurus_Sayisi", ascending=False)
 
-    # 2. Genel İstatistikler ve Işın Bilgisi
+    # 2. Sayfa: İstatistiksel Özet (İstediğin tüm metrikler burada)
     angles_only = avg_angles[active_indices]
-    total_sent_rays = n_theta * n_phi # Kaynaktan çıkan toplam ışın
-    total_bounces = np.sum(hit_counts) # Toplam gerçekleşen sekme sayısı
+    total_sent_rays = n_theta * n_phi
+    total_bounces = np.sum(hit_counts)
 
     summary_data = {
-        "Metrik": [
+        "Metrik Açıklaması": [
             "Kaynaktan Çıkan Toplam Işın",
-            "Toplam Gerçekleşen Sekme Sayısı",
-            "Vuruş Alan Toplam Üçgen Sayısı",
-            "Genel Ortalama Açı (Geliş/Sekme)",
-            "Minimum Açı",
-            "Maksimum Açı",
-            "Açı Varyansı (Dağılım)",
-            "En Çok Sekme Alan Üçgen ID"
+            "Toplam Sekme (Vuruş) Sayısı",
+            "Vuruş Alan Benzersiz Üçgen Sayısı",
+            "Ortalama Gelme/Yansıma Açısı (°)",
+            "Minimum Açı (°)",
+            "Maksimum Açı (°)",
+            "Açı Varyansı (Dağılım Yayılımı)",
+            "Standart Sapma",
+            "En Çok Darbe Alan Üçgen ID",
+            "En Yüksek Vuruş Sayısı"
         ],
         "Değer": [
             total_sent_rays,
@@ -388,18 +394,19 @@ def save_detailed_results_to_excel(hit_counts, avg_angles, n_theta, n_phi, filen
             np.min(angles_only),
             np.max(angles_only),
             np.var(angles_only),
-            df_hits.iloc[0]["Ucgen_ID"]
+            np.std(angles_only),
+            df_hits.iloc[0]["Ucgen_ID"],
+            df_hits.iloc[0]["Vurus_Sayisi"]
         ]
     }
     df_summary = pd.DataFrame(summary_data)
 
-    # Excel'e Kaydet
+    # Excel'e farklı sayfalar (Sheet) olarak kaydetme
     with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-        df_summary.to_excel(writer, sheet_name='Genel_Ozet', index=False)
-        df_hits.to_excel(writer, sheet_name='Detayli_Aci_Listesi', index=False)
+        df_summary.to_excel(writer, sheet_name='Genel_Istatistikler', index=False)
+        df_hits.to_excel(writer, sheet_name='Ucgen_Bazli_Detaylar', index=False)
     
-    print(f"\n✅ Excel dosyası oluşturuldu: {filename}")
-     
+    print(f"\n✅ Detaylı Excel raporu oluşturuldu: {filename}")
 # ══════════════════════════════════════════════════════════════════════════════
 # 8. GÖRSELLEŞTİRME
 # ══════════════════════════════════════════════════════════════════════════════
@@ -445,8 +452,9 @@ def visualize(A, B, C, hit_counts, avg_angles, bounce_paths,
         hit_A  = A[active_hits]; hit_B = B[active_hits]; hit_C = C[active_hits]
         counts = hit_counts[active_hits]
         verts  = [[hit_A[i], hit_B[i], hit_C[i]] for i in range(len(hit_A))]
-        norm1  = mcolors.Normalize(vmin=1, vmax=np.max(counts))
-        cmap1  = plt.get_cmap('jet')
+        v_max_sabit = 10  
+        norm1 = mcolors.Normalize(vmin=1, vmax=v_max_sabit)
+        cmap1  = plt.get_cmap('jet',10)
         ax1.add_collection3d(Poly3DCollection(verts, facecolors=cmap1(norm1(counts)),
                                                edgecolors='none', alpha=0.9))
         mappable1 = plt.cm.ScalarMappable(norm=norm1, cmap=cmap1)

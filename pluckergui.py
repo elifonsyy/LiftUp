@@ -71,7 +71,7 @@ class SimulationGUI(ctk.CTk):
         self._log_queue    = queue.Queue()
         self._result_queue = queue.Queue()
 
-        self._file_path = tk.StringVar(value="Lift_Up_Model.unv")
+        self._file_path = tk.StringVar(value="Kavite_230k.unv")
         self._origin_x  = tk.StringVar(value="0.0")
         self._origin_y  = tk.StringVar(value="-0.05")
         self._origin_z  = tk.StringVar(value="0.2")
@@ -520,8 +520,8 @@ class SimulationGUI(ctk.CTk):
             from simulation_core_plucker import (
                 read_unv_mesh_optimized,
                 generate_beam_from_counts,
-                precompute_plucker,
-                build_bvh,
+                plucker_method,
+                bvh_tree,
                 plucker_bvh_tracer,
                 run_simulation,
                 visualize
@@ -545,11 +545,11 @@ class SimulationGUI(ctk.CTk):
                 return
 
             print("\n[PRECOMPUTE] Plücker kenar verileri hesaplanıyor...")
-            dAB,mAB,dBC,mBC,dCA,mCA,N_arr,d_plane = precompute_plucker(A, B_, C_) \
-                if False else precompute_plucker(A, B, C_)
+            dAB,mAB,dBC,mBC,dCA,mCA,N_arr,d_plane = plucker_method(A, B_, C_) \
+                if False else plucker_method(A, B, C_)
 
             print("\n[BVH] Ağaç inşa ediliyor...")
-            bvh_nodes, bvh_meta, bvh_tids = build_bvh(A, B, C_)
+            bvh_nodes, bvh_meta, bvh_tids = bvh_tree(A, B, C_)
             print(f"  {len(bvh_nodes)} düğüm oluşturuldu.")
 
             rays_o, rays_d = generate_beam_from_counts(
@@ -576,15 +576,14 @@ class SimulationGUI(ctk.CTk):
                 bvh_nodes, bvh_meta, bvh_tids,
                 max_safety_limit=max_bounces
             )
-            save_detailed_results_to_excel(
-            hit_counts, 
-            avg_angles, 
-            params["n_theta"], 
-            params["n_phi"], 
-            "Işın_Analiz_Raporu.xlsx"
-)
             try:
-                save_detailed_results_to_excel(hit_counts, avg_angles, "Işın_Analiz_Raporu.xlsx")
+                # params sözlüğünden n_theta ve n_phi değerlerini alıyoruz
+                save_detailed_results_to_excel(
+                    hit_counts, 
+                    avg_angles, 
+                    params["n_theta"], 
+                    params["n_phi"]
+                )
             except Exception as e:
                 print(f"\n[EXCEL HATASI] Kayıt yapılamadı: {e}")
 
