@@ -135,6 +135,114 @@ def scrollable_frame(parent):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# SPLASH SCREEN
+# ══════════════════════════════════════════════════════════════════════════════
+def show_splash(duration=6000):
+    """
+    Splash screen — specter_final.jpg gösterilir.
+    Resme tıklanınca VEYA 'duration' ms geçince kapanır, ardından uygulama açılır.
+    PIL yoksa sessizce atlanır.
+    """
+    try:
+        from PIL import Image, ImageTk, ImageDraw, ImageFont
+    except ImportError:
+        print("[SPLASH] Pillow yüklü değil, splash atlanıyor.  pip install Pillow")
+        return
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    jpg_path = os.path.join(base_dir, "specter_final.jpg")
+    ico_path = os.path.join(base_dir, "specter.ico")
+
+    # Önce JPG, yoksa ICO dene
+    img_path = jpg_path if os.path.isfile(jpg_path) else ico_path
+    if not os.path.isfile(img_path):
+        print("[SPLASH] Görsel bulunamadı (specter_final.jpg / specter.ico), splash atlanıyor.")
+        return
+
+    try:
+        raw = Image.open(img_path).convert("RGBA")
+        if img_path.lower().endswith(".ico"):
+            best, best_px = raw, raw.size[0] * raw.size[1]
+            frames = getattr(raw, "n_frames", 1)
+            for i in range(frames):
+                try:
+                    raw.seek(i)
+                    px = raw.size[0] * raw.size[1]
+                    if px > best_px:
+                        best_px = px
+                        best = raw.copy()
+                except Exception:
+                    break
+            raw = best.convert("RGBA")
+    except Exception as e:
+        print(f"[SPLASH] Görsel açılamadı: {e}")
+        return
+
+    # Tkinter splash penceresi — önce oluştur, ekran boyutunu al
+    splash = tk.Tk()
+    splash.overrideredirect(True)
+    splash.attributes("-topmost", True)
+    splash.configure(background="#14203E")
+
+    scr_w = splash.winfo_screenwidth()
+    scr_h = splash.winfo_screenheight()
+
+    # Görseli tam ekrana ölçekle (en-boy oranını koru, siyah bantlarla doldur)
+    img_w, img_h = raw.size
+    scale = min(scr_w / img_w, scr_h / img_h)
+    new_w = int(img_w * scale)
+    new_h = int(img_h * scale)
+    raw = raw.resize((new_w, new_h), Image.LANCZOS)
+
+    # Siyah arka plan üzerine ortala
+    canvas_img = Image.new("RGBA", (scr_w, scr_h), (10, 18, 38, 255))
+    ox = (scr_w - new_w) // 2
+    oy = (scr_h - new_h) // 2
+    canvas_img.paste(raw, (ox, oy), raw)
+
+    # Alt çubuk: "Tıklayın" yazısı
+    bar_h = 42
+    bar = Image.new("RGBA", (scr_w, bar_h), (10, 22, 50, 220))
+    draw = ImageDraw.Draw(bar)
+    try:
+        font = ImageFont.truetype("segoeui.ttf", 16)
+    except Exception:
+        font = ImageFont.load_default()
+    txt = "▶  Başlatmak için tıklayın  —  otomatik açılış birkaç saniyede"
+    try:
+        bbox = draw.textbbox((0, 0), txt, font=font)
+        tx = (scr_w - (bbox[2] - bbox[0])) // 2
+        ty = (bar_h - (bbox[3] - bbox[1])) // 2
+    except Exception:
+        tx, ty = 20, 12
+    draw.text((tx, ty), txt, fill=(144, 184, 255), font=font)
+    canvas_img.paste(bar, (0, scr_h - bar_h))
+
+    splash.geometry(f"{scr_w}x{scr_h}+0+0")
+
+    photo = ImageTk.PhotoImage(canvas_img)
+    lbl = tk.Label(splash, image=photo, bd=0, cursor="hand2", background="#14203E")
+    lbl.pack()
+    splash.photo = photo
+
+    _closed = [False]
+
+    def close_splash(event=None):
+        if _closed[0]:
+            return
+        _closed[0] = True
+        try:
+            splash.destroy()
+        except Exception:
+            pass
+
+    lbl.bind("<Button-1>", close_splash)
+    splash.bind("<Button-1>", close_splash)
+    splash.after(duration, close_splash)
+    splash.mainloop()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # ANA PENCERE
 # ══════════════════════════════════════════════════════════════════════════════
 class SimulationGUI(tk.Tk):
@@ -150,11 +258,20 @@ class SimulationGUI(tk.Tk):
 
     def __init__(self):
         super().__init__()
-        self.title("IŞIN SİMÜLASYONU  —  Plücker + BVH")
-        self.geometry("1400x900")
-        self.minsize(1100, 720)
+        self.title("SPECTER  —  Çok Amaçlı Seken Işın Takibi Algoritması")
         self.configure(background=BG)
         apply_theme(self)
+        self.minsize(1100, 720)
+        # Tam ekran (maximize) — ESC ile normal boyuta dönülebilir
+        self.state("zoomed")
+        self.bind("<Escape>", lambda e: self.state("normal"))
+
+        # Uygulama ikonu
+        try:
+            icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "specter.ico")
+            self.iconbitmap(icon_path)
+        except Exception:
+            pass
 
         self._sim_thread   = None
         self._stop_flag    = threading.Event()
@@ -173,7 +290,8 @@ class SimulationGUI(tk.Tk):
         self._p_end       = tk.StringVar(value="105")
         self._n_phi       = tk.StringVar(value="45")
         self._max_bounce  = tk.StringVar(value="100")
-        self._num_threads = tk.IntVar(value=0)   # 0 = otomatik (tüm çekirdekler)
+        self._num_threads = tk.IntVar(value=0)
+        self._parallel_dir = tk.StringVar(value="manuel")  # seçili hızlı yön
         self._cam_elev    = tk.DoubleVar(value=20.0)
         self._cam_azim    = tk.DoubleVar(value=45.0)
 
@@ -220,8 +338,8 @@ class SimulationGUI(tk.Tk):
         hdr.pack_propagate(False)
         logo_f = ttk.Frame(hdr, style="Hdr.TFrame")
         logo_f.pack(side="left", padx=20, pady=8)
-        ttk.Label(logo_f, text="⬡ IŞIN SİMÜLASYONU", style="Hdr.TLabel").pack(side="left")
-        ttk.Label(logo_f, text="   Plücker + Precompute + BVH", style="Sub.TLabel").pack(side="left", pady=(4,0))
+        ttk.Label(logo_f, text="⬡ SPECTEER", style="Hdr.TLabel").pack(side="left")
+        ttk.Label(logo_f, text="   Çok Amaçlı Seken Işın Takibi Algoritması", style="Sub.TLabel").pack(side="left", pady=(4,0))
         self._status_dot = ttk.Label(hdr, text="● Hazır", style="Status.TLabel")
         self._status_dot.pack(side="right", padx=24)
         ttk.Separator(self, orient="horizontal").pack(fill="x")
@@ -280,13 +398,69 @@ class SimulationGUI(tk.Tk):
                         value="Noktasal", command=self._on_source_type_change).pack(side="left", padx=8)
         ttk.Radiobutton(src_f, text="Paralel", variable=self._source_type,
                         value="Paralel", command=self._on_source_type_change).pack(side="left")
+
+        # ── Noktasal: koordinat girişi ────────────────────────────────────────
         self._origin_frame = ttk.Frame(lf2)
         self._origin_frame.pack(fill="x")
-        for lbl, var in [("X  (m)", self._origin_x), ("Y  (m)", self._origin_y), ("Z  (m)", self._origin_z)]:
+        for lbl, var in [("X  (m)", self._origin_x),
+                         ("Y  (m)", self._origin_y),
+                         ("Z  (m)", self._origin_z)]:
             r = ttk.Frame(self._origin_frame)
             r.pack(fill="x", pady=2)
             ttk.Label(r, text=lbl, width=16).pack(side="left")
             make_entry(r, var, width=14).pack(side="right")
+
+        # ── Paralel: hızlı yön butonları ─────────────────────────────────────
+        self._parallel_frame = ttk.Frame(lf2)
+        # başta gizli
+
+        ttk.Label(self._parallel_frame,
+                  text="Işın Gönderim Yönü:", font=F_BOLD,
+                  foreground=ACCENT).pack(anchor="w", pady=(2, 4))
+
+        # 2 satır × 3 sütun buton grid
+        dir_grid = ttk.Frame(self._parallel_frame)
+        dir_grid.pack(fill="x", pady=(0, 6))
+        for col in range(3):
+            dir_grid.columnconfigure(col, weight=1, uniform="dg")
+
+        DIRECTIONS = [
+            ("+X  →",  "px",  (90,   0),  0, 0),
+            ("−X  ←",  "mx",  (90, 180),  0, 1),
+            ("+Y  ↑",  "py",  (90,  90),  0, 2),
+            ("−Y  ↓",  "my",  (90, 270),  1, 0),
+            ("+Z  ⊙",  "pz",  ( 1,   0),  1, 1),
+            ("−Z  ⊗",  "mz",  (179,  0),  1, 2),
+        ]
+        self._dir_btns = {}
+        for lbl, key, (th, ph), row, col in DIRECTIONS:
+            btn = tk.Button(
+                dir_grid, text=lbl,
+                font=(FONT_UI, 10, "bold"),
+                bg="#E0E8F4", fg=ACCENT,
+                activebackground="#CCE0FF",
+                relief="flat", bd=1, cursor="hand2", pady=5,
+                command=lambda k=key, t=th, p=ph: self._set_parallel_direction(k, t, p))
+            btn.grid(row=row, column=col, padx=3, pady=3, sticky="ew")
+            self._dir_btns[key] = btn
+
+        ttk.Separator(self._parallel_frame, orient="horizontal").pack(fill="x", pady=(0, 6))
+
+        # Manuel mod notu
+        man_f = ttk.Frame(self._parallel_frame)
+        man_f.pack(fill="x")
+        ttk.Label(man_f, text="Manuel:", font=F_BOLD,
+                  foreground=ACCENT).pack(side="left")
+        ttk.Label(man_f,
+                  text="  Aşağıdaki Theta/Phi değerlerinden otomatik hesaplanır",
+                  style="Dim.TLabel").pack(side="left")
+
+        # Seçili yön göstergesi
+        self._parallel_dir_lbl = ttk.Label(
+            self._parallel_frame,
+            text="▶  Seçili: Manuel (Theta/Phi değerlerinden)",
+            foreground=ACCENT2, font=F_SMALL, background=BG)
+        self._parallel_dir_lbl.pack(anchor="w", pady=(4, 2))
 
         # Theta
         lf3 = make_labelframe(parent, "🔻  Theta — Dikey Açı")
@@ -460,8 +634,13 @@ class SimulationGUI(tk.Tk):
         ax  = fig.add_subplot(111, projection="3d")
         ax.set_facecolor("#F8F8F8")
         fig.subplots_adjust(left=0.0, right=1.0, top=0.95, bottom=0.04)
+        DIR_NAMES = {
+            "px": "+X →", "mx": "−X ←", "py": "+Y ↑",
+            "my": "−Y ↓", "pz": "+Z ⊙", "mz": "−Z ⊗", "manuel": "Manuel"
+        }
+        par_dir_name = DIR_NAMES.get(self._parallel_dir.get(), "Manuel")
         fig.suptitle(
-            f"{'Noktasal' if src=='Noktasal' else 'Paralel'}  |"
+            f"{'Noktasal' if src=='Noktasal' else f'Paralel  [{par_dir_name}]'}  |"
             f"  θ: {t0}°–{t1}°   φ: {p0}°–{p1}°",
             color=TXT_DIM, fontsize=11)
 
@@ -590,20 +769,14 @@ class SimulationGUI(tk.Tk):
         self._sim_status_lbl.pack(side="left", padx=8)
         ttk.Separator(page, orient="horizontal").pack(fill="x")
 
-        # Grafik
-        self._sim_visual_area = ttk.Frame(page, style="White.TFrame")
-        self._sim_visual_area.pack(fill="both", expand=True)
-        self._sim_placeholder = ttk.Label(
-            self._sim_visual_area,
-            text="Simülasyon tamamlanınca grafik burada gösterilecek.\n\n"
-                 "Alttaki sekmelerden farklı görünümler seçebilirsiniz.",
-            style="Dim2.TLabel", anchor="center", justify="center")
-        self._sim_placeholder.place(relx=0.5, rely=0.5, anchor="center")
-        ttk.Separator(page, orient="horizontal").pack(fill="x")
+        # ── Alt sekme çubuğu ve sub-bar ÖNCE pack edilmeli ──
+        # Tkinter'da fill+expand=True en son pack edilen widget'a uygulanır.
+        # tab_bar / sub_bar sonraya bırakılırsa grafik canvas onların üzerine biner.
 
         # Alt sekme çubuğu
         tab_bar = ttk.Frame(page, style="Nav.TFrame", height=42)
-        tab_bar.pack(fill="x"); tab_bar.pack_propagate(False)
+        tab_bar.pack(side="bottom", fill="x")
+        tab_bar.pack_propagate(False)
         sim_tabs = [("📊", "Üçgen Işın"), ("📈", "Histogram"), ("💻", "CPU/RAM")]
         self._sim_tab_btns = {}
         for icon, name in sim_tabs:
@@ -619,13 +792,26 @@ class SimulationGUI(tk.Tk):
 
         # Alt seçenek şeridi
         sub_bar = ttk.Frame(page, style="TFrame", height=40)
-        sub_bar.pack(fill="x"); sub_bar.pack_propagate(False)
+        sub_bar.pack(side="bottom", fill="x")
+        sub_bar.pack_propagate(False)
         lbl = ttk.Label(sub_bar, text="Görünüm:", font=F_SMALL, foreground=TXT_DIM)
         lbl.pack(side="left", padx=(10,4), pady=8)
         ttk.Separator(sub_bar, orient="vertical").pack(side="left", fill="y", pady=4)
         self._sub_option_container = ttk.Frame(sub_bar)
         self._sub_option_container.pack(side="left", padx=6, pady=4, fill="y")
         self._build_sub_options("Üçgen Işın")
+
+        ttk.Separator(page, orient="horizontal").pack(side="bottom", fill="x")
+
+        # Grafik alanı EN SON pack edilir — böylece fill+expand geri kalan alanı doldurur
+        self._sim_visual_area = ttk.Frame(page, style="White.TFrame")
+        self._sim_visual_area.pack(side="top", fill="both", expand=True)
+        self._sim_placeholder = ttk.Label(
+            self._sim_visual_area,
+            text="Simülasyon tamamlanınca grafik burada gösterilecek.\n\n"
+                 "Alttaki sekmelerden farklı görünümler seçebilirsiniz.",
+            style="Dim2.TLabel", anchor="center", justify="center")
+        self._sim_placeholder.place(relx=0.5, rely=0.5, anchor="center")
 
     def _build_sub_options(self, tab_name):
         for w in self._sub_option_container.winfo_children():
@@ -673,13 +859,9 @@ class SimulationGUI(tk.Tk):
             return
         tab    = self._current_sim_tab.get()
         option = self._current_sub_option.get()
-        cache_key = f"{tab}_{option}"
-        if cache_key in self._graph_cache:
-            self._embed_graph(self._graph_cache[cache_key]); return
-        if self._sim_canvas:
-            self._sim_canvas.get_tk_widget().destroy()
-            plt.close(self._sim_fig)
-            self._sim_canvas = None; self._sim_fig = None
+
+        # Cache kaldırıldı: matplotlib fig nesnesi bir canvas'a bağlandıktan sonra
+        # başka canvas'a bağlanamaz — her sekme değişiminde yeni fig oluşturulur.
         self._sim_placeholder.configure(text="Grafik yükleniyor…")
         self._sim_placeholder.place(relx=0.5, rely=0.5, anchor="center")
 
@@ -717,7 +899,6 @@ class SimulationGUI(tk.Tk):
                 elif tab == "CPU/RAM":
                     if option == "CPU Kullanımı":
                         fig = create_cpu_graph(d["_res"], bg_color=PANEL, text_color=TXT)
-                        # Y eksenini veriye göre otomatik ayarla
                         if fig is not None and len(d["_res"].get("cpu", [])) >= 2:
                             ax = fig.axes[0]
                             cpu_arr = d["_res"]["cpu"]
@@ -726,22 +907,20 @@ class SimulationGUI(tk.Tk):
                             ax.set_ylim(max(0, mn - pad), mx + pad)
                     elif option == "RAM Kullanımı":
                         fig = create_ram_graph(d["_res"], bg_color=PANEL, text_color=TXT)
-                        # Y eksenini veriye göre otomatik ayarla
                         if fig is not None and len(d["_res"].get("ram", [])) >= 2:
                             ax = fig.axes[0]
                             ram_arr = [r / 1024.0 for r in d["_res"]["ram"]]
                             mn, mx = min(ram_arr), max(ram_arr)
                             pad = max((mx - mn) * 0.3, 0.005)
                             ax.set_ylim(max(0, mn - pad), mx + pad)
-                    # Hızlı simülasyon notu varsa grafiğe ekle
-                    if fig is not None and d["_res"].get("fast_sim_note"):
-                        fig.text(0.5, 0.01, d["_res"]["fast_sim_note"],
-                                 ha="center", va="bottom", fontsize=9,
-                                 color=TXT_DIM, style="italic",
-                                 transform=fig.transFigure)
+                if tab == "CPU/RAM" and fig is not None and d["_res"].get("fast_sim_note"):
+                    fig.text(0.5, 0.01, d["_res"]["fast_sim_note"],
+                             ha="center", va="bottom", fontsize=9,
+                             color=TXT_DIM, style="italic",
+                             transform=fig.transFigure)
                 if fig is not None:
-                    self._graph_cache[cache_key] = fig
-                    self.after(0, lambda: self._embed_graph(fig))
+                    # lambda f=fig: closure bug'ını önler
+                    self.after(0, lambda f=fig: self._embed_graph(f))
                 else:
                     self.after(0, lambda: self._sim_placeholder.place(relx=0.5, rely=0.5, anchor="center"))
             except Exception as e:
@@ -755,22 +934,35 @@ class SimulationGUI(tk.Tk):
     def _embed_graph(self, fig):
         try:
             self._sim_placeholder.place_forget()
-            if self._sim_toolbar:
-                self._sim_toolbar.destroy()
-                self._sim_toolbar = None
+
+            # Önce canvas temizle, sonra toolbar — pack sırasını bozmamak için
             if self._sim_canvas:
+                self._sim_canvas.get_tk_widget().pack_forget()
                 self._sim_canvas.get_tk_widget().destroy()
                 self._sim_canvas = None
-            toolbar_frame = tk.Frame(self._sim_visual_area, background=NAV_BG, height=36)
+                self._sim_fig = None
+            if self._sim_toolbar:
+                self._sim_toolbar.pack_forget()
+                self._sim_toolbar.destroy()
+                self._sim_toolbar = None
+
+            # Toolbar önce side=bottom, canvas sonra side=top + expand
+            # _sim_visual_area içinde bu sıra kritik
+            toolbar_frame = tk.Frame(self._sim_visual_area, background=NAV_BG, height=34)
             toolbar_frame.pack(side="bottom", fill="x")
+            toolbar_frame.pack_propagate(False)
+
             canvas = FigureCanvasTkAgg(fig, master=self._sim_visual_area)
             nav = NavigationToolbar2Tk(canvas, toolbar_frame)
             nav.update()
-            self._sim_toolbar = toolbar_frame   # frame'i sakla
+
+            self._sim_toolbar = toolbar_frame
             canvas.draw()
             canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
             self._sim_canvas = canvas
             self._sim_fig = fig
+            self._sim_visual_area.update_idletasks()
+
         except Exception as e:
             self._show_graph_error(f"Embedding hatası:\n{str(e)}")
 
@@ -938,7 +1130,8 @@ class SimulationGUI(tk.Tk):
                 from simulation_core import save_detailed_results_to_excel
                 saved = save_detailed_results_to_excel(
                     self._sim_data["_hit"], self._sim_data["_ang"],
-                    self._sim_data["_nt"], self._sim_data["_np"])
+                    self._sim_data["_nt"], self._sim_data["_np"],
+                    resource_data=self._sim_data.get("_res"))
                 self._excel_filename = saved
                 self.after(0, lambda: self._update_rapor_page(saved))
             except Exception as e:
@@ -955,30 +1148,30 @@ class SimulationGUI(tk.Tk):
         outer.pack(fill="both", expand=True, padx=16, pady=12)
         ttk.Label(sc, text="📖  Kullanım Kılavuzu", style="Title.TLabel").pack(anchor="w", pady=(0,12))
         sections = [
-            ("1️⃣  Başlangıç",[
+            ("1️  Başlangıç",[
                 "• Uygulamayı başlattığınızda Ayarlar sayfası açılır",
                 "• Mesh dosyanızı seçin (UNV formatı desteklenir)",
                 "• Işın kaynağı tipini belirleyin (Noktasal veya Paralel)",
                 "• Kaynak noktasının koordinatlarını girin (Noktasal için)"]),
-            ("2️⃣  Parametre Ayarları",[
+            ("2️  Parametre Ayarları",[
                 "• Theta (Dikey Açı): Işınların dikey yayılım açısı (derece)",
                 "• Phi (Yatay Açı): Işınların yatay yayılım açısı (derece)",
                 "• Adım Sayısı: Her açı için kaç ışın oluşturulacağı",
                 "• Maks Sekme: Işınların maksimum yansıma sayısı",
                 "• Toplam ışın sayısı = Theta adımı × Phi adımı"]),
-            ("3️⃣  Önizleme",[
+            ("3️  Önizleme",[
                 "• 'Önizlemeye Git' butonu ile ışın dağılımını görüntüleyin",
                 "• Kamera açısını (Yükseklik ve Yatay) ayarlayabilirsiniz",
                 "• Grafik araçlarını kullanarak zoom ve pan yapabilirsiniz"]),
-            ("4️⃣  Simülasyon",[
+            ("4️  Simülasyon",[
                 "• 'Simülasyonu Başlat' butonu ile hesaplamayı başlatın",
                 "• Simülasyon sırasında 'Durdur' butonu ile iptal edebilirsiniz",
                 "• Grafik sekmeleri: Üçgen Işın, Histogram, CPU/RAM"]),
-            ("5️⃣  Sonuçlar",[
+            ("5️  Sonuçlar",[
                 "• Mesh Bilgisi: Yüklenen üçgen ve toplam ışın sayısı",
                 "• Çarpış Açıları: Ortalama, minimum ve maksimum açılar",
                 "• Performans: Simülasyon süresi, CPU ve RAM kullanımı"]),
-            ("6️⃣  Grafik Araçları",[
+            ("6️  Grafik Araçları",[
                 "• 🏠 Home: Orijinal görünüme dön",
                 "• ⊕ Pan: Grafiği sürükleyerek hareket ettir",
                 "• 🔍 Zoom: Dikdörtgen seçerek yakınlaştır",
@@ -1087,9 +1280,16 @@ class SimulationGUI(tk.Tk):
         self._reset_stats()
         self._graph_cache.clear()
         if self._sim_canvas:
+            self._sim_canvas.get_tk_widget().pack_forget()
             self._sim_canvas.get_tk_widget().destroy()
-            plt.close(self._sim_fig)
+            if self._sim_fig:
+                plt.close(self._sim_fig)
             self._sim_canvas = None
+            self._sim_fig = None
+        if self._sim_toolbar:
+            self._sim_toolbar.pack_forget()
+            self._sim_toolbar.destroy()
+            self._sim_toolbar = None
         self._sim_placeholder.place(relx=0.5, rely=0.5, anchor="center")
         params = dict(file_path=fp, origin=[ox,oy,oz],
                       theta_range=(t0,t1), phi_range=(p0,p1),
@@ -1384,7 +1584,8 @@ class SimulationGUI(tk.Tk):
         self._excel_filename = None
         try:
             from simulation_core import save_detailed_results_to_excel
-            saved = save_detailed_results_to_excel(r["_hit"],r["_ang"],r["_nt"],r["_np"])
+            saved = save_detailed_results_to_excel(r["_hit"],r["_ang"],r["_nt"],r["_np"],
+                                                    resource_data=r.get("_res"))
             self._excel_filename = saved
             self._update_rapor_page(saved)
         except Exception as e:
@@ -1412,11 +1613,42 @@ class SimulationGUI(tk.Tk):
         else:
             self._thread_val_lbl.configure(text=f"{n} çekirdek")
 
+    def _set_parallel_direction(self, key, theta_deg, phi_deg):
+        """Hızlı yön butonuna basılınca theta/phi değerlerini güncelle."""
+        self._parallel_dir.set(key)
+
+        # Theta ve Phi aralığını seçilen yöne göre dar tut (±5°)
+        self._t_start.set(str(theta_deg - 5))
+        self._t_end.set(str(theta_deg + 5))
+        self._p_start.set(str(phi_deg - 5))
+        self._p_end.set(str(phi_deg + 5))
+
+        # Buton görünümünü güncelle
+        DIR_LABELS = {
+            "px": "+X  →", "mx": "−X  ←", "py": "+Y  ↑",
+            "my": "−Y  ↓", "pz": "+Z  ⊙", "mz": "−Z  ⊗",
+        }
+        for k, btn in self._dir_btns.items():
+            if k == key:
+                btn.configure(bg=ACCENT, fg="white")
+            else:
+                btn.configure(bg="#E0E8F4", fg=ACCENT)
+
+        dir_name = DIR_LABELS.get(key, key)
+        self._parallel_dir_lbl.configure(
+            text=f"▶  Seçili: {dir_name}  "
+                 f"(θ={theta_deg}°, φ={phi_deg}°)")
+        self._update_ray_summary()
+
     def _on_source_type_change(self):
         if self._source_type.get() == "Noktasal":
+            self._parallel_frame.pack_forget()
             self._origin_frame.pack(fill="x")
+            # paralel butonları sıfırla
+            self._parallel_dir.set("manuel")
         else:
             self._origin_frame.pack_forget()
+            self._parallel_frame.pack(fill="x", pady=(4, 0))
 
     def _update_ray_summary(self, *_):
         try:
@@ -1429,5 +1661,6 @@ class SimulationGUI(tk.Tk):
 
 # ══════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
+    show_splash(4000)       # 4 saniye splash screen
     app = SimulationGUI()
     app.mainloop()

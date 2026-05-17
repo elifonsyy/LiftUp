@@ -271,8 +271,9 @@ def run_simulation(rays_o, rays_d, A, B, C,
     bounce_paths = []
     
     # Gelen ve seken açı verileri
-    incoming_angles = []  # Her çarpışmadaki gelen açı
+    incoming_angles = []    # Her çarpışmadaki gelen açı
     reflection_angles = []  # Her çarpışmadaki seken açı
+    reflection_tri_ids = [] # Seken açının hangi üçgene ait olduğu
     
     # İlk çarpışma bilgisini sakla (renklendirme için)
     first_hit_ids = None
@@ -351,8 +352,9 @@ def run_simulation(rays_o, rays_d, A, B, C,
         cos_angles_reflect  = np.clip(np.abs(dot_product_reflect), 0.0, 1.0)
         reflect_angles_deg  = np.degrees(np.arccos(cos_angles_reflect))
         
-        # Seken açıları kaydet
+        # Seken açıları kaydet (üçgen ID'siyle birlikte)
         reflection_angles.extend(reflect_angles_deg.tolist())
+        reflection_tri_ids.extend(valid_hit_ids.tolist())
 
         for k, hit_id in enumerate(valid_hit_ids):
             hit_counts[hit_id]  += 1
@@ -393,10 +395,11 @@ def run_simulation(rays_o, rays_d, A, B, C,
     resource_data = {
         "cpu":  cpu_samples, "ram":   ram_samples,
         "times":time_samples,"duration":total_elapsed,
-        "incoming_angles": np.array(incoming_angles),
-        "reflection_angles": np.array(reflection_angles),
-        "bounce_times": np.array(bounce_times),
-        "bounce_hit_rates": np.array(bounce_hit_rates),
+        "incoming_angles":    np.array(incoming_angles),
+        "reflection_angles":  np.array(reflection_angles),
+        "reflection_tri_ids": np.array(reflection_tri_ids, dtype=np.int32),
+        "bounce_times":      np.array(bounce_times),
+        "bounce_hit_rates":  np.array(bounce_hit_rates),
     }
     return hit_counts, avg_angles, bounce_paths, resource_data, first_hit_ids, initial_rays_o, initial_rays_d
 
@@ -684,81 +687,108 @@ def create_heatmap_figure(A, B, C, hit_counts,
                          cam_elev=20, cam_azim=45,
                          bg_color="#FFFFFF", text_color="#333333"):
     """
-    Isı haritası figure oluştur.
-    Üçgenler çarpma sayısına göre renklendirilir, colorbar ile gösterilir.
-    PERFORMANS OPTİMİZE EDİLDİ: Daha az üçgen, daha hızlı render.
+    Isı haritası figure oluştur — geliştirilmiş versiyon.
+    - inferno renk haritası (algısal olarak eşit)
+    - Logaritmik normalizasyon (fark büyükse)
+    - İnce kenar çizgileri (3D derinlik)
+    - Pasif mesh yarı saydam yüzey olarak
+    - Büyük ve okunaklı colorbar
+    - Max çarpış noktası vurgusu
+    - Başlıkta istatistik özeti
     """
-    fig = plt.Figure(figsize=(10, 8), facecolor=bg_color, dpi=80)
+    fig = plt.Figure(figsize=(12, 9), facecolor=bg_color, dpi=100)
     ax = fig.add_subplot(111, projection='3d')
     ax.set_facecolor(bg_color)
-    
+
     # Mesh sınırlarını hesapla
     all_pts = np.concatenate([A, B, C], axis=0)
     mn, mx = all_pts.min(0), all_pts.max(0)
     mesh_center = (mn + mx) / 2.0
     mesh_scale = float((mx - mn).max())
     mr = mesh_scale / 2.0
-    
+
     # Çarpılan üçgenleri bul
     active_hits = hit_counts > 0
-    
+
     if np.sum(active_hits) > 0:
         hit_A = A[active_hits]
         hit_B = B[active_hits]
         hit_C = C[active_hits]
         counts = hit_counts[active_hits]
-        
-        # PERFORMANS: Çok fazla üçgen varsa downsample yap
-        max_triangles = 5000
+
+        # Çok fazla üçgen varsa orantılı örnekle (üst sınır yükseltildi)
+        max_triangles = 15000
         if len(hit_A) > max_triangles:
-            # En yüksek hit count'a sahip üçgenleri seç
-            top_indices = np.argsort(counts)[-max_triangles:]
-            hit_A = hit_A[top_indices]
-            hit_B = hit_B[top_indices]
-            hit_C = hit_C[top_indices]
-            counts = counts[top_indices]
-        
-        # Üçgenleri oluştur
+            step = len(hit_A) // max_triangles
+            hit_A = hit_A[::step]
+            hit_B = hit_B[::step]
+            hit_C = hit_C[::step]
+            counts = counts[::step]
+
         verts = [[hit_A[i], hit_B[i], hit_C[i]] for i in range(len(hit_A))]
-        
-        # Renk haritası
-        norm = mcolors.Normalize(vmin=1, vmax=np.max(counts))
-        cmap = plt.get_cmap('jet')
-        
-        # 3D collection ekle
-        ax.add_collection3d(Poly3DCollection(verts,
-                                            facecolors=cmap(norm(counts)),
-                                            edgecolors='none',
-                                            alpha=0.85,
-                                            rasterized=True))
-        
-        # Colorbar ekle
+
+        # inferno: algısal olarak eşit, koyu→açık geçiş, renk körü dostu
+        cmap = plt.get_cmap('inferno')
+
+        # Logaritmik normalizasyon: aralık 10x'den büyükse log kullan
+        if np.max(counts) / max(np.min(counts), 1) > 10:
+            norm = mcolors.LogNorm(vmin=1, vmax=np.max(counts))
+        else:
+            norm = mcolors.Normalize(vmin=1, vmax=np.max(counts))
+
+        ax.add_collection3d(Poly3DCollection(
+            verts,
+            facecolors=cmap(norm(counts)),
+            edgecolors='#00000022',   # ince yarı saydam kenar → 3D derinlik
+            linewidths=0.2,
+            alpha=0.92,
+            rasterized=True
+        ))
+
+        # Colorbar — daha büyük ve okunaklı
         mappable = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
         mappable.set_array(counts)
-        cbar = fig.colorbar(mappable, ax=ax, shrink=0.6, aspect=20, pad=0.08)
-        cbar.set_label('Çarpma Sayısı', color=text_color, fontsize=10)
-        cbar.ax.tick_params(colors=text_color, labelsize=8)
-        cbar.outline.set_edgecolor('#D0D0D0')
-    
-    # Çarpılmayan üçgenleri hafif göster (ÇOK DAHA AZ NOKTA)
+        cbar = fig.colorbar(mappable, ax=ax, shrink=0.75, aspect=15, pad=0.05)
+        cbar.set_label('Çarpma Sayısı', color=text_color, fontsize=11)
+        cbar.ax.tick_params(colors=text_color, labelsize=9)
+        cbar.outline.set_edgecolor('#A0A0A0')
+
+        # En fazla çarpılan üçgeni beyaz nokta + kırmızı kenarla vurgula
+        max_idx = np.argmax(counts)
+        cx = (hit_A[max_idx][0] + hit_B[max_idx][0] + hit_C[max_idx][0]) / 3
+        cy = (hit_A[max_idx][1] + hit_B[max_idx][1] + hit_C[max_idx][1]) / 3
+        cz = (hit_A[max_idx][2] + hit_B[max_idx][2] + hit_C[max_idx][2]) / 3
+        ax.scatter([cx], [cy], [cz], color='white', s=60, zorder=10,
+                   edgecolors='red', linewidths=1.5,
+                   label=f'Max: {int(np.max(counts))} çarpış')
+        ax.legend(loc='upper left', fontsize=9,
+                  facecolor=bg_color, labelcolor=text_color)
+
+    # Çarpılmayan üçgenleri yarı saydam yüzey olarak göster (scatter yerine)
     inactive = ~active_hits
     if np.sum(inactive) > 0:
-        step = max(1, np.sum(inactive) // 800)  # 2000'den 800'e düşürüldü
-        pts = np.concatenate([A[inactive][::step],
-                             B[inactive][::step],
-                             C[inactive][::step]], axis=0)
-        ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2],
-                  c='#E0E0E0', s=0.15, alpha=0.08, linewidths=0, rasterized=True)
-    
+        step = max(1, np.sum(inactive) // 3000)
+        in_A = A[inactive][::step]
+        in_B = B[inactive][::step]
+        in_C = C[inactive][::step]
+        inactive_verts = [[in_A[i], in_B[i], in_C[i]] for i in range(len(in_A))]
+        ax.add_collection3d(Poly3DCollection(
+            inactive_verts,
+            facecolors='#CCCCCC',
+            edgecolors='none',
+            alpha=0.12,
+            rasterized=True
+        ))
+
     # Eksen ayarları
-    ax.set_xlabel('X (m)', color=text_color, fontsize=9)
-    ax.set_ylabel('Y (m)', color=text_color, fontsize=9)
-    ax.set_zlabel('Z (m)', color=text_color, fontsize=9)
+    ax.set_xlabel('X (m)', color=text_color, fontsize=10)
+    ax.set_ylabel('Y (m)', color=text_color, fontsize=10)
+    ax.set_zlabel('Z (m)', color=text_color, fontsize=10)
     ax.set_xlim(mesh_center[0]-mr, mesh_center[0]+mr)
     ax.set_ylim(mesh_center[1]-mr, mesh_center[1]+mr)
     ax.set_zlim(mesh_center[2]-mr, mesh_center[2]+mr)
     ax.view_init(elev=cam_elev, azim=cam_azim)
-    
+
     # Grid ve stil
     ax.grid(True, color='#D0D0D0', linewidth=0.3, alpha=0.3)
     for axis in [ax.xaxis, ax.yaxis, ax.zaxis]:
@@ -766,13 +796,23 @@ def create_heatmap_figure(A, B, C, hit_counts,
         axis.pane.set_edgecolor('#D0D0D0')
         axis.line.set_color('#B0B0B0')
     ax.tick_params(colors='#666666', labelsize=8)
-    
-    try: ax.dist = 8
-    except: pass
-    
-    fig.suptitle('Isı Haritası Görünümü', color=text_color, fontsize=13, fontweight='bold')
+
+    # Kamera mesafesi mesh büyüklüğüne göre otomatik ayarla
+    try:
+        ax.dist = max(7, min(11, 9 - mesh_scale * 0.5))
+    except Exception:
+        pass
+
+    # Başlıkta istatistik özeti
+    n_hit = int(np.sum(active_hits))
+    n_total = len(hit_counts)
+    hit_pct = 100 * n_hit / max(n_total, 1)
+    fig.suptitle(
+        f'Isı Haritası  |  {n_hit:,} / {n_total:,} üçgen çarpıldı  ({hit_pct:.1f}%)',
+        color=text_color, fontsize=13, fontweight='bold'
+    )
     fig.tight_layout()
-    
+
     return fig
 
 
@@ -1272,7 +1312,8 @@ def create_ram_graph(resource_data, bg_color="#FFFFFF", text_color="#333333"):
 # ══════════════════════════════════════════════════════════════════════════════
 # 9. EXCEL KAYIT FONKSİYONU
 # ══════════════════════════════════════════════════════════════════════════════
-def save_detailed_results_to_excel(hit_counts, avg_angles, n_theta, n_phi, filename=None):
+def save_detailed_results_to_excel(hit_counts, avg_angles, n_theta, n_phi,
+                                    filename=None, resource_data=None):
     """
     Simülasyon sonuçlarını Excel dosyasına kaydeder.
     İki sayfa: Genel İstatistikler + Üçgen Bazlı Detaylar (pandas)
@@ -1280,11 +1321,12 @@ def save_detailed_results_to_excel(hit_counts, avg_angles, n_theta, n_phi, filen
 
     Parameters:
     -----------
-    hit_counts : np.ndarray
-    avg_angles : np.ndarray
-    n_theta : int
-    n_phi : int
-    filename : str, optional
+    hit_counts    : np.ndarray
+    avg_angles    : np.ndarray  — her üçgenin ortalama GELİŞ açısı
+    n_theta       : int
+    n_phi         : int
+    filename      : str, optional
+    resource_data : dict, optional — 'reflection_angles' listesini içerir
     """
     try:
         import openpyxl
@@ -1360,42 +1402,33 @@ def save_detailed_results_to_excel(hit_counts, avg_angles, n_theta, n_phi, filen
         cell.border = border_style
 
     max_hits = int(np.max(hit_counts)) if np.max(hit_counts) > 0 else 1
-    for tri_idx in range(len(hit_counts)):
-        row_idx = start_row + 1 + tri_idx
+    for loop_idx, tri_idx in enumerate(active_indices):
+        row_idx = start_row + 1 + loop_idx
         hit_val = int(hit_counts[tri_idx])
 
-        ws.cell(row=row_idx, column=1, value=tri_idx + 1).alignment = data_align
+        ws.cell(row=row_idx, column=1, value=int(tri_idx + 1)).alignment = data_align
         ws.cell(row=row_idx, column=1).border = border_style
         ws.cell(row=row_idx, column=2, value=hit_val).alignment = data_align
         ws.cell(row=row_idx, column=2).border = border_style
 
-        if hit_val > 0:
-            angle_val = float(avg_angles[tri_idx])
-            ws.cell(row=row_idx, column=3, value=round(angle_val, 2)).alignment = data_align
-            ws.cell(row=row_idx, column=3).border = border_style
+        angle_val = float(avg_angles[tri_idx])
+        ws.cell(row=row_idx, column=3, value=round(angle_val, 2)).alignment = data_align
+        ws.cell(row=row_idx, column=3).border = border_style
 
-            if angle_val < 30:
-                status, color = "Dik Çarpış", "C6EFCE"
-            elif angle_val < 60:
-                status, color = "Orta Açı",  "FFEB9C"
-            else:
-                status, color = "Sıyırma",   "FFC7CE"
-
-            c4 = ws.cell(row=row_idx, column=4, value=status)
-            c4.fill = PatternFill(start_color=color, end_color=color, fill_type="solid")
-            c4.alignment = data_align; c4.border = border_style
-
-            density = round((hit_val / max_hits) * 100, 1)
-            ws.cell(row=row_idx, column=5, value=f"{density}%").alignment = data_align
-            ws.cell(row=row_idx, column=5).border = border_style
+        if angle_val < 30:
+            status, color = "Dik Çarpış", "C6EFCE"
+        elif angle_val < 60:
+            status, color = "Orta Açı",  "FFEB9C"
         else:
-            ws.cell(row=row_idx, column=3, value="-").alignment = data_align
-            ws.cell(row=row_idx, column=3).border = border_style
-            c4 = ws.cell(row=row_idx, column=4, value="Çarpışma Yok")
-            c4.fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
-            c4.alignment = data_align; c4.border = border_style
-            ws.cell(row=row_idx, column=5, value="0%").alignment = data_align
-            ws.cell(row=row_idx, column=5).border = border_style
+            status, color = "Sıyırma",   "FFC7CE"
+
+        c4 = ws.cell(row=row_idx, column=4, value=status)
+        c4.fill = PatternFill(start_color=color, end_color=color, fill_type="solid")
+        c4.alignment = data_align; c4.border = border_style
+
+        density = round((hit_val / max_hits) * 100, 1)
+        ws.cell(row=row_idx, column=5, value=f"{density}%").alignment = data_align
+        ws.cell(row=row_idx, column=5).border = border_style
 
     for col, w in zip(['A','B','C','D','E'], [12,15,18,18,14]):
         ws.column_dimensions[col].width = w
@@ -1440,12 +1473,37 @@ def save_detailed_results_to_excel(hit_counts, avg_angles, n_theta, n_phi, filen
                 ws2.cell(row=r_idx, column=c_idx, value=val)
 
         # Üçgen bazlı detaylar sayfası
+        # Yansıma açısı: yansıma yasası gereği gelen=seken açısıdır (specular reflection).
+        # avg_angles zaten bu değeri tutuyor. Ancak resource_data varsa ve üçgen bazlı
+        # eşleme yapılabilirse, reflection_angles'dan üçgen ortalaması alınır;
+        # aksi hâlde gelen açı ile aynı değer (fiziksel olarak doğru) yazılır.
+        reflect_per_tri = avg_angles[active_indices]  # varsayılan: gelen = seken (yansıma yasası)
+
+        if (resource_data is not None
+                and "reflection_angles" in resource_data
+                and "reflection_tri_ids" in resource_data):
+            # Üçgen bazlı gerçek ortalama yansıma açısı
+            ref_angles_arr = np.array(resource_data["reflection_angles"])
+            ref_tri_ids    = np.array(resource_data["reflection_tri_ids"])
+            ref_sum   = np.zeros(len(hit_counts), dtype=np.float64)
+            ref_count = np.zeros(len(hit_counts), dtype=np.int32)
+            for k, tri_id in enumerate(ref_tri_ids):
+                if 0 <= tri_id < len(hit_counts):
+                    ref_sum[tri_id]   += ref_angles_arr[k]
+                    ref_count[tri_id] += 1
+            mask = ref_count[active_indices] > 0
+            reflect_per_tri = np.where(
+                mask,
+                ref_sum[active_indices] / np.maximum(ref_count[active_indices], 1),
+                avg_angles[active_indices]
+            )
+
         ws3 = wb.create_sheet("Ucgen_Bazli_Detaylar")
         hit_data = {
             "Ucgen_ID":              active_indices.tolist(),
             "Vurus_Sayisi":          hit_counts[active_indices].tolist(),
             "Ort_Gelis_Acisi_Deg":   [round(float(x), 4) for x in avg_angles[active_indices]],
-            "Ort_Yansima_Acisi_Deg": [round(float(x), 4) for x in avg_angles[active_indices]],
+            "Ort_Yansima_Acisi_Deg": [round(float(x), 4) for x in reflect_per_tri],
         }
         df_hits = pd.DataFrame(hit_data).sort_values(by="Vurus_Sayisi", ascending=False)
         for r_idx, row in enumerate(
