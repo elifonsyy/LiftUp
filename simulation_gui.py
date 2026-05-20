@@ -1,7 +1,4 @@
-"""
-IŞIN SİMÜLASYONU — MATLAB/Windows Tarzı GUI
-Kurulum: pip install psutil numba matplotlib numpy
-"""
+"""IŞIN SİMÜLASYONU GUI"""
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -41,9 +38,9 @@ F_TITLE   = (FONT_UI, 13, "bold")
 F_BIG     = (FONT_UI, 11, "bold")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 # TEMA
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 def apply_theme(root):
     style = ttk.Style(root)
     style.theme_use("clam")
@@ -103,9 +100,9 @@ def apply_theme(root):
     style.configure("TScale", background=BG, troughcolor="#C8C8C8", sliderthickness=14)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 # YARDIMCILAR
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 def make_labelframe(parent, title, padding=8, **kw):
     return ttk.LabelFrame(parent, text=title, padding=padding, **kw)
 
@@ -134,9 +131,9 @@ def scrollable_frame(parent):
     return outer, inner
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 # SPLASH SCREEN
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 def show_splash(duration=6000):
     """
     Splash screen — specter_final.jpg gösterilir.
@@ -242,9 +239,9 @@ def show_splash(duration=6000):
     splash.mainloop()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 # ANA PENCERE
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 class SimulationGUI(tk.Tk):
 
     PAGES = [
@@ -325,9 +322,9 @@ class SimulationGUI(tk.Tk):
         self._build_ui()
         self._poll()
 
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     # UI
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     def _build_ui(self):
         self._build_header()
         self._build_notebook()
@@ -364,9 +361,9 @@ class SimulationGUI(tk.Tk):
         if name in names:
             self._nb.select(names.index(name))
 
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     # SAYFA: AYARLAR
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     def _build_page_ayarlar(self):
         page = self._pages["Ayarlar"]
         left = ttk.Frame(page, width=470)
@@ -399,7 +396,7 @@ class SimulationGUI(tk.Tk):
         ttk.Radiobutton(src_f, text="Paralel", variable=self._source_type,
                         value="Paralel", command=self._on_source_type_change).pack(side="left")
 
-        # ── Noktasal: koordinat girişi ────────────────────────────────────────
+        # Noktasal: koordinat girişi 
         self._origin_frame = ttk.Frame(lf2)
         self._origin_frame.pack(fill="x")
         for lbl, var in [("X  (m)", self._origin_x),
@@ -410,7 +407,7 @@ class SimulationGUI(tk.Tk):
             ttk.Label(r, text=lbl, width=16).pack(side="left")
             make_entry(r, var, width=14).pack(side="right")
 
-        # ── Paralel: hızlı yön butonları ─────────────────────────────────────
+        # Paralel: hızlı yön butonları 
         self._parallel_frame = ttk.Frame(lf2)
         # başta gizli
 
@@ -560,7 +557,7 @@ class SimulationGUI(tk.Tk):
             style="Dim2.TLabel", anchor="center", justify="center")
         self._mesh_placeholder.place(relx=0.5, rely=0.5, anchor="center")
 
-        cam_lf = make_labelframe(parent, "🎥  Kamera Açısı")
+        cam_lf = make_labelframe(parent, "🎥  Bakış Açısı")
         cam_lf.pack(fill="x")
         er = ttk.Frame(cam_lf)
         er.pack(fill="x", pady=(0,2))
@@ -579,9 +576,9 @@ class SimulationGUI(tk.Tk):
                   command=lambda v: self._azim_lbl.configure(text=f"{int(float(v))}°")
                   ).pack(fill="x")
 
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     # SAYFA: ÖNİZLEME
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     def _build_page_onizleme(self):
         page = self._pages["Önizleme"]
         tb = ttk.Frame(page, style="Nav.TFrame", height=44)
@@ -746,9 +743,9 @@ class SimulationGUI(tk.Tk):
         self._preview_canvas = canvas
         self._preview_fig    = fig
 
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     # SAYFA: SİMÜLASYON
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     def _build_page_simulasyon(self):
         page = self._pages["Simülasyon"]
         # Toolbar
@@ -859,15 +856,12 @@ class SimulationGUI(tk.Tk):
             return
         tab    = self._current_sim_tab.get()
         option = self._current_sub_option.get()
-
-        # Cache kaldırıldı: matplotlib fig nesnesi bir canvas'a bağlandıktan sonra
-        # başka canvas'a bağlanamaz — her sekme değişiminde yeni fig oluşturulur.
         self._sim_placeholder.configure(text="Grafik yükleniyor…")
         self._sim_placeholder.place(relx=0.5, rely=0.5, anchor="center")
 
         def create_graph():
             try:
-                from simulation_core import (
+                from ray_functions import (
                     create_ray_path_figure, create_heatmap_figure,
                     create_bounce_histogram,
                     create_incoming_angle_histogram, create_reflection_angle_histogram,
@@ -970,9 +964,9 @@ class SimulationGUI(tk.Tk):
         self._sim_placeholder.configure(text=msg)
         self._sim_placeholder.place(relx=0.5, rely=0.5, anchor="center")
 
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     # SAYFA: SONUÇLAR
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     def _build_page_sonuclar(self):
         page = self._pages["Sonuçlar"]
         hdr = ttk.Frame(page, style="Nav.TFrame", height=38)
@@ -1013,9 +1007,9 @@ class SimulationGUI(tk.Tk):
         stat_group(sc,0,3,"CPU","🖥",[("cpu_avg","Ortalama (%)"),("cpu_max","Maksimum (%)")])
         stat_group(sc,1,3,"RAM","💾",[("ram_avg","Ortalama (GB)"),("ram_max","Maksimum (GB)")])
 
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     # SAYFA: RAPOR
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     def _build_page_rapor(self):
         page = self._pages["Rapor"]
         tb = ttk.Frame(page, style="Nav.TFrame", height=48)
@@ -1127,7 +1121,7 @@ class SimulationGUI(tk.Tk):
         self._rapor_status_lbl.configure(text="Rapor yeniden oluşturuluyor…", foreground=TXT_DIM)
         def regen():
             try:
-                from simulation_core import save_detailed_results_to_excel
+                from ray_functions import save_detailed_results_to_excel
                 saved = save_detailed_results_to_excel(
                     self._sim_data["_hit"], self._sim_data["_ang"],
                     self._sim_data["_nt"], self._sim_data["_np"],
@@ -1139,9 +1133,9 @@ class SimulationGUI(tk.Tk):
                 self.after(0, lambda: self._update_rapor_page(None))
         threading.Thread(target=regen, daemon=True).start()
 
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     # SAYFA: YARDIM
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     def _build_page_yardim(self):
         page = self._pages["Yardım"]
         outer, sc = scrollable_frame(page)
@@ -1184,9 +1178,9 @@ class SimulationGUI(tk.Tk):
                 ttk.Label(lf, text=item, style="Dim.TLabel",
                           anchor="w", justify="left", wraplength=900).pack(anchor="w", pady=1, padx=4)
 
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     # MESH BROWSE + MİNİ ÖNİZLEME
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     def _browse_file(self):
         path = filedialog.askopenfilename(
             title="UNV Mesh Dosyası Seç",
@@ -1197,7 +1191,7 @@ class SimulationGUI(tk.Tk):
 
     def _load_mesh(self, path):
         try:
-            from simulation_core import read_unv_mesh_optimized
+            from ray_functions import read_unv_mesh_optimized
             A, B, Cm = read_unv_mesh_optimized(path)
             self._mesh_A, self._mesh_B, self._mesh_C = A, B, Cm
             self.after(0, self._draw_mesh_mini)
@@ -1246,9 +1240,9 @@ class SimulationGUI(tk.Tk):
         self._mesh_mini_canvas = canvas
         self._mesh_mini_fig    = fig
 
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     # SİMÜLASYON
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     def _start_simulation(self):
         if self._sim_thread and self._sim_thread.is_alive(): return
         try:
@@ -1321,7 +1315,7 @@ class SimulationGUI(tk.Tk):
     def _sim_worker(self, params):
         try:
             import time
-            from simulation_core import (
+            from ray_functions import (
                 read_unv_mesh_optimized, generate_beam_from_counts,
                 precompute_plucker, build_bvh, plucker_bvh_tracer,
                 run_simulation, visualize
@@ -1378,11 +1372,6 @@ class SimulationGUI(tk.Tk):
 
             t0 = time.perf_counter()
             rays_o, rays_d = generate_beam_from_counts(orig, tr, pr, nt, np_)
-
-            # ── Paralel Kaynak Düzeltmesi ────────────────────────────────────
-            # generate_beam_from_counts her zaman tüm ışınları aynı origin'den
-            # başlatır. Paralel modda ışınlar farklı noktalardan, aynı yönde
-            # çıkmalı (düzlemsel dalga / far-field simülasyonu).
             if src == "Paralel":
                 # 1. Merkez yönü hesapla (theta/phi aralığının ortası)
                 theta_c = np.radians((tr[0] + tr[1]) / 2.0)
@@ -1537,9 +1526,9 @@ class SimulationGUI(tk.Tk):
             print(f"\n[HATA] {e}\n{traceback.format_exc()}")
             self.after(0, lambda: self._sim_finished())
 
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     # SONUÇ UYGULA
-    # ══════════════════════════════════════════════════════════════════════════
+    # ------------------------------------------------
     def _apply_results(self, r):
         self._stat_vars["triangles"].set(f"{r['num_tris']:,}")
         self._stat_vars["total_rays"].set(f"{r['total_rays']:,}")
@@ -1583,7 +1572,7 @@ class SimulationGUI(tk.Tk):
         self._sim_data = r
         self._excel_filename = None
         try:
-            from simulation_core import save_detailed_results_to_excel
+            from ray_functions import save_detailed_results_to_excel
             saved = save_detailed_results_to_excel(r["_hit"],r["_ang"],r["_nt"],r["_np"],
                                                     resource_data=r.get("_res"))
             self._excel_filename = saved

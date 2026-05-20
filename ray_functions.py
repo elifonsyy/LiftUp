@@ -1,12 +1,4 @@
-"""
-simulation_core.py
-──────────────────
-Plücker + Precompute + BVH Multi-Bounce Ray Tracer — çekirdek modül.
-GUI (simulation_gui.py) bu modülü import eder.
-
-Kurulum:
-    pip install numpy numba matplotlib psutil openpyxl
-"""
+"""ray_functions.py, LiftUp projesi için ışın izleme ve simülasyon fonksiyonlarını içerir."""
 
 import numpy as np
 import time
@@ -21,9 +13,9 @@ import matplotlib.colors as mcolors
 from datetime import datetime
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 # 0. KAYNAK İZLEYİCİ
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 class ResourceMonitor:
     def __init__(self, interval: float = 0.1):
         self.interval    = interval
@@ -54,9 +46,9 @@ class ResourceMonitor:
         return list(self._cpu), list(self._ram), list(self._times)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 # 1. UNV DOSYASI OKUMA
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 def read_unv_mesh_optimized(file_path):
     nodes     = {}
     triangles = []
@@ -98,9 +90,9 @@ def read_unv_mesh_optimized(file_path):
     return A, B, C
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 # 2. IŞIN ÜRETME
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 def generate_beam_from_counts(origin, theta_range, phi_range, n_theta, n_phi):
     origin = np.array(origin, dtype=np.float64)
     thetas = np.radians(np.linspace(theta_range[0], theta_range[1], n_theta))
@@ -116,9 +108,9 @@ def generate_beam_from_counts(origin, theta_range, phi_range, n_theta, n_phi):
     return rays_o, rays_d
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 # 3. PLÜCKER PRECOMPUTE
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 def precompute_plucker(A, B, C):
     dAB = B - A;  mAB = np.cross(A, dAB)
     dBC = C - B;  mBC = np.cross(B, dBC)
@@ -131,9 +123,9 @@ def precompute_plucker(A, B, C):
             N_arr.astype(np.float64), d_plane.astype(np.float64))
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 # 4. BVH
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 MAX_LEAF_TRIS = 8
 
 def build_bvh(A, B, C):
@@ -178,9 +170,9 @@ def build_bvh(A, B, C):
             np.array(tri_ids_list, dtype=np.int32))
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 # 5. IŞIN-KUTU KESİŞİM
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 @njit(fastmath=True)
 def ray_aabb_intersect(ox, oy, oz, idx, idy, idz, mn, mx, t_max):
     tx1 = (mn[0]-ox)*idx;  tx2 = (mx[0]-ox)*idx
@@ -192,9 +184,9 @@ def ray_aabb_intersect(ox, oy, oz, idx, idy, idz, mn, mx, t_max):
     return t_far >= max(t_near, 1e-9) and t_near < t_max
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 # 6. PLÜCKER + BVH TRACER
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 @njit(parallel=True, fastmath=True)
 def plucker_bvh_tracer(rays_o, rays_d,
                         dAB, mAB, dBC, mBC, dCA, mCA,
@@ -255,9 +247,9 @@ def plucker_bvh_tracer(rays_o, rays_d,
     return hit_triangle_ids, hit_distances
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 # 7. MULTI-BOUNCE SİMÜLASYONU
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 def run_simulation(rays_o, rays_d, A, B, C,
                    dAB, mAB, dBC, mBC, dCA, mCA,
                    N_arr, d_plane,
@@ -404,9 +396,9 @@ def run_simulation(rays_o, rays_d, A, B, C,
     return hit_counts, avg_angles, bounce_paths, resource_data, first_hit_ids, initial_rays_o, initial_rays_d
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 # 8. GÖRSELLEŞTİRME
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 def visualize(A, B, C, hit_counts, avg_angles, bounce_paths,
               origin, theta_range, phi_range, n_theta, n_phi,
               min_x, max_x, min_y, max_y, min_z, max_z,
@@ -557,9 +549,9 @@ def visualize(A, B, C, hit_counts, avg_angles, bounce_paths,
     plt.show()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 # 8B. YENİ GÖRSELLEŞTİRME FONKSİYONLARI (GUI İÇİN)
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 
 def create_ray_path_figure(A, B, C, bounce_paths, origin,
                            rays_o=None, rays_d=None, first_hit_ids=None,
@@ -568,12 +560,7 @@ def create_ray_path_figure(A, B, C, bounce_paths, origin,
     """
     Işın yollarını gösteren 3D figure oluştur.
     Üçgenler transparan, ışın yolları renkli çizgiler olarak gösterilir.
-    
-    Parametreler:
-    - rays_o, rays_d, first_hit_ids: Yeni parametreler (opsiyonel, geriye dönük uyumluluk için)
-      Eğer verilirse, çarpan ışınlar kırmızı, çarpmayan ışınlar mavi gösterilir.
-    
-    PERFORMANS OPTİMİZE EDİLDİ: Daha az nokta, daha hızlı render.
+    Eğer verilirse, çarpan ışınlar kırmızı, çarpmayan ışınlar mavi gösterilir.
     """
     fig = plt.Figure(figsize=(10, 8), facecolor=bg_color, dpi=80)
     ax = fig.add_subplot(111, projection='3d')
@@ -586,7 +573,7 @@ def create_ray_path_figure(A, B, C, bounce_paths, origin,
     mesh_scale = float((mx - mn).max())
     mr = mesh_scale / 2.0
     
-    # Üçgenleri transparan göster (ÇOK DAHA AZ NOKTA)
+    # Üçgenleri transparan gösterir (ÇOK DAHA AZ NOKTA)
     step = max(1, len(A) // 1000)  # 3000'den 1000'e düşürüldü
     pts = np.concatenate([A[::step], B[::step], C[::step]], axis=0)
     ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2],
@@ -627,7 +614,7 @@ def create_ray_path_figure(A, B, C, bounce_paths, origin,
                        color='#E74C3C', alpha=0.6, linewidth=0.7,
                        rasterized=True)
     else:
-        # ESKİ DAVRANŞ: Tüm ışınları mavi göster (geriye dönük uyumluluk)
+        # Tüm ışınları mavi göster
         max_rays_to_draw = 80
         for bounce_idx, (start_pts, end_pts) in enumerate(bounce_paths):
             n = start_pts.shape[0]
@@ -819,11 +806,8 @@ def create_heatmap_figure(A, B, C, hit_counts,
 def create_ray_trace_figure(A, B, C, bounce_paths, hit_counts, origin,
                            cam_elev=20, cam_azim=45,
                            bg_color="#FFFFFF", text_color="#333333"):
-    """
-    Işın izi figure oluştur.
-    Işınların yönünü ve yoğunluğunu birlikte gösterir.
-    PERFORMANS OPTİMİZE EDİLDİ: Daha az üçgen ve ışın.
-    """
+    """Işın izi figure oluştur.
+    Işınların yönünü ve yoğunluğunu birlikte gösterir."""
     fig = plt.Figure(figsize=(10, 8), facecolor=bg_color, dpi=80)
     ax = fig.add_subplot(111, projection='3d')
     ax.set_facecolor(bg_color)
@@ -919,11 +903,8 @@ def create_ray_trace_figure(A, B, C, bounce_paths, hit_counts, origin,
 
 def create_angle_histogram(avg_angles, hit_counts,
                            bg_color="#FFFFFF", text_color="#333333"):
-    """
-    Gelme açısı histogramı oluştur.
-    0° = Dik çarpış, 90° = Sıyırma
-    PERFORMANS OPTİMİZE EDİLDİ: Daha düşük DPI.
-    """
+    """Gelme açısı histogramı oluştur.
+    0° = Dik çarpış, 90° = Sıyırma"""
     fig = plt.Figure(figsize=(10, 6), facecolor=bg_color, dpi=80)
     ax = fig.add_subplot(111)
     ax.set_facecolor('#FFFFFF')
@@ -1132,11 +1113,8 @@ def create_reflection_angle_histogram(resource_data, bg_color="#FFFFFF", text_co
 
 def create_bounce_histogram(bounce_paths, A, B, C, hit_counts, avg_angles,
                            bg_color="#FFFFFF", text_color="#333333"):
-    """
-    Sekme açısı histogramı oluştur.
-    Her sekme için ortalama açıyı gösterir.
-    PERFORMANS OPTİMİZE EDİLDİ: Daha düşük DPI.
-    """
+    """Sekme açısı histogramı oluştur.
+    Her sekme için ortalama açıyı gösterir."""
     fig = plt.Figure(figsize=(10, 6), facecolor=bg_color, dpi=80)
     ax = fig.add_subplot(111)
     ax.set_facecolor('#FFFFFF')
@@ -1198,10 +1176,7 @@ def create_bounce_histogram(bounce_paths, A, B, C, hit_counts, avg_angles,
 
 
 def create_cpu_graph(resource_data, bg_color="#FFFFFF", text_color="#333333"):
-    """
-    CPU kullanım grafiği oluştur.
-    PERFORMANS OPTİMİZE EDİLDİ: Daha düşük DPI.
-    """
+    """CPU kullanım grafiği oluştur."""
     fig = plt.Figure(figsize=(10, 6), facecolor=bg_color, dpi=80)
     ax = fig.add_subplot(111)
     ax.set_facecolor('#FFFFFF')
@@ -1309,223 +1284,170 @@ def create_ram_graph(resource_data, bg_color="#FFFFFF", text_color="#333333"):
     return fig
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 # 9. EXCEL KAYIT FONKSİYONU
-# ══════════════════════════════════════════════════════════════════════════════
+# ------------------------------------------------
 def save_detailed_results_to_excel(hit_counts, avg_angles, n_theta, n_phi,
                                     filename=None, resource_data=None):
     """
-    Simülasyon sonuçlarını Excel dosyasına kaydeder.
-    İki sayfa: Genel İstatistikler + Üçgen Bazlı Detaylar (pandas)
-    + Styled özet sayfası (openpyxl)
-
-    Parameters:
-    -----------
-    hit_counts    : np.ndarray
-    avg_angles    : np.ndarray  — her üçgenin ortalama GELİŞ açısı
-    n_theta       : int
-    n_phi         : int
-    filename      : str, optional
-    resource_data : dict, optional — 'reflection_angles' listesini içerir
+    Simülasyon sonuçlarını mükerrer veri üretmeden optimize bir şekilde kaydeder.
+    Sayfa 1: Simülasyon_Raporu -> Sadece İstatistiksel Özet (Tablosuz, Temiz Grafik/Metrik Alanı)
+    Sayfa 2: Vurus_Alan_Ucgenler -> Sadece hit_count > 0 olan veri detayları (Azalan Sırada)
     """
     try:
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         from openpyxl.utils import get_column_letter
     except ImportError:
-        print("\n[UYARI] openpyxl kütüphanesi bulunamadı.")
-        print("Excel kayıt için: pip install openpyxl")
+        print("\n[UYARI] openpyxl kütüphanesi bulunamadı: pip install openpyxl")
         return
     
-    # Dosya adı (timestamp ile)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if filename is None:
         filename = f"Isin_Analiz_Raporu_{timestamp}.xlsx"
 
-    print(f"\n[EXCEL] Sonuçlar kaydediliyor: {filename}")
+    print(f"\n[EXCEL] Rapor optimize edilerek kaydediliyor: {filename}")
 
-    active_hits   = hit_counts > 0
+    active_hits = hit_counts > 0
     active_indices = np.where(active_hits)[0]
     total_sent_rays = n_theta * n_phi
-    total_bounces   = int(np.sum(hit_counts))
+    total_bounces = int(np.sum(hit_counts))
 
-    # ── Pandas ile iki veri sayfası ──────────────────────────────────────────
     try:
         import pandas as pd
         has_pandas = True
     except ImportError:
         has_pandas = False
-        print("[UYARI] pandas yüklü değil, sadece openpyxl sayfası oluşturulacak.")
 
-    # Workbook
     wb = openpyxl.Workbook()
 
-    # ── Sayfa 1: Özet (openpyxl styled) ─────────────────────────────────────
-    ws = wb.active
-    ws.title = "Simülasyon_Özeti"
 
-    header_fill  = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-    header_font  = Font(bold=True, color="FFFFFF", size=12)
-    header_align = Alignment(horizontal="center", vertical="center")
-    data_align   = Alignment(horizontal="center", vertical="center")
-    border_style = Border(
-        left=Side(style='thin', color='D0D0D0'),   right=Side(style='thin', color='D0D0D0'),
-        top=Side(style='thin', color='D0D0D0'),    bottom=Side(style='thin', color='D0D0D0')
-    )
+    # EXCEL SAYFA 1
 
-    ws['A1'] = "IŞIN SİMÜLASYONU SONUÇLARI"
-    ws['A1'].font = Font(bold=True, size=14, color="1F4E78")
-    ws.merge_cells('A1:E1')
-    ws['A2'] = f"Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
-    ws['A3'] = f"Toplam Işın: {n_theta} × {n_phi} = {total_sent_rays}"
-    ws['A4'] = f"Toplam Üçgen: {len(hit_counts)}"
+    ws1 = wb.active
+    ws1.title = "Simülasyon_Raporu"
+    ws1.views.sheetView[0].showGridLines = True
+
+    # Stil Tanımlamaları
+    title_font = Font(name="Segoe UI", size=15, bold=True, color="1F4E78")
+    section_font = Font(name="Segoe UI", size=11, bold=True, color="2B579A")
+    label_font = Font(name="Segoe UI", size=10, bold=False, color="555555")
+    value_font = Font(name="Segoe UI", size=10, bold=True, color="111111")
+    
+    border_thin = Border(bottom=Side(style='thin', color='E0E0E0'))
+
+    # Başlık Alanı
+    ws1['A1'] = "IŞIN SİMÜLASYONU ÖZET RAPORU"
+    ws1['A1'].font = title_font
+    ws1.row_dimensions[1].height = 25
+
+    metrics = [
+        ("Genel Bilgiler", ""),
+        ("Tarih / Saat", datetime.now().strftime('%d.%m.%Y %H:%M:%S')),
+        ("Toplam Gönderilen Işın", total_sent_rays),
+        ("Sistemdeki Toplam Üçgen", len(hit_counts)),
+        
+        ("Sekme & Etkileşim İstatistikleri", ""),
+        ("Işın İsabet Eden Benzersiz Üçgen", len(active_indices)),
+        ("Toplam Sekme (Vuruş) Sayısı", total_bounces),
+        
+        ("Açısal Analiz Özeti (Gelme/Sekme)", ""),
+    ]
 
     if len(active_indices) > 0:
         angles_only = avg_angles[active_indices]
-        ws['A5'] = f"Çarpılan Üçgen: {len(active_indices)}"
-        ws['A6'] = f"Toplam Sekme (Vuruş): {total_bounces}"
-        ws['A7'] = f"Ortalama Açı: {np.mean(angles_only):.2f}°"
-        ws['A8'] = f"Min Açı: {np.min(angles_only):.2f}°"
-        ws['A9'] = f"Max Açı: {np.max(angles_only):.2f}°"
-        ws['A10'] = f"Standart Sapma: {np.std(angles_only):.2f}°"
-        ws['A11'] = f"Varyans: {np.var(angles_only):.2f}"
+        metrics.extend([
+            ("Ortalama Açı (°)", round(float(np.mean(angles_only)), 2)),
+            ("Minimum Açı (°)", round(float(np.min(angles_only)), 2)),
+            ("Maksimum Açı (°)", round(float(np.max(angles_only)), 2)),
+            ("Standart Sapma (°)", round(float(np.std(angles_only)), 2)),
+            ("Açı Varyansı", round(float(np.var(angles_only)), 2)),
+            ("En Çok Darbe Alan Üçgen ID", int(active_indices[np.argmax(hit_counts[active_indices])] + 1)),
+            ("En Yüksek Vuruş Sayısı", int(np.max(hit_counts[active_indices])))
+        ])
 
-    # Tablo başlıkları
-    start_row = 13
-    headers = ["Üçgen ID", "Vuruş Sayısı", "Ortalama Açı (°)", "Durum", "Yoğunluk (%)"]
-    for col_idx, header in enumerate(headers, start=1):
-        cell = ws.cell(row=start_row, column=col_idx)
-        cell.value = header
-        cell.fill  = header_fill
-        cell.font  = header_font
-        cell.alignment = header_align
-        cell.border = border_style
+    row_idx = 3
+    for label, val in metrics:
+        if val == "":  # Kategori Başlığı
+            row_idx += 1
+            cell = ws1.cell(row=row_idx, column=1, value=label)
+            cell.font = section_font
+            ws1.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=3)
+            row_idx += 1
+        else:          # Veri Satırı
+            c_label = ws1.cell(row=row_idx, column=1, value=label)
+            c_label.font = label_font
+            c_label.border = border_thin
+            
+            c_val = ws1.cell(row=row_idx, column=2, value=val)
+            c_val.font = value_font
+            c_val.alignment = Alignment(horizontal="right")
+            c_val.border = border_thin
+            row_idx += 1
 
-    max_hits = int(np.max(hit_counts)) if np.max(hit_counts) > 0 else 1
-    for loop_idx, tri_idx in enumerate(active_indices):
-        row_idx = start_row + 1 + loop_idx
-        hit_val = int(hit_counts[tri_idx])
+    ws1.column_dimensions['A'].width = 35
+    ws1.column_dimensions['B'].width = 25
 
-        ws.cell(row=row_idx, column=1, value=int(tri_idx + 1)).alignment = data_align
-        ws.cell(row=row_idx, column=1).border = border_style
-        ws.cell(row=row_idx, column=2, value=hit_val).alignment = data_align
-        ws.cell(row=row_idx, column=2).border = border_style
 
-        angle_val = float(avg_angles[tri_idx])
-        ws.cell(row=row_idx, column=3, value=round(angle_val, 2)).alignment = data_align
-        ws.cell(row=row_idx, column=3).border = border_style
-
-        if angle_val < 30:
-            status, color = "Dik Çarpış", "C6EFCE"
-        elif angle_val < 60:
-            status, color = "Orta Açı",  "FFEB9C"
-        else:
-            status, color = "Sıyırma",   "FFC7CE"
-
-        c4 = ws.cell(row=row_idx, column=4, value=status)
-        c4.fill = PatternFill(start_color=color, end_color=color, fill_type="solid")
-        c4.alignment = data_align; c4.border = border_style
-
-        density = round((hit_val / max_hits) * 100, 1)
-        ws.cell(row=row_idx, column=5, value=f"{density}%").alignment = data_align
-        ws.cell(row=row_idx, column=5).border = border_style
-
-    for col, w in zip(['A','B','C','D','E'], [12,15,18,18,14]):
-        ws.column_dimensions[col].width = w
-
-    # ── Sayfa 2 + 3: Pandas (varsa) ─────────────────────────────────────────
-    if has_pandas and len(active_indices) > 0:
-        angles_only = avg_angles[active_indices]
-
-        # Genel istatistikler sayfası
-        ws2 = wb.create_sheet("Genel_Istatistikler")
-        summary_data = {
-            "Metrik Açıklaması": [
-                "Kaynaktan Çıkan Toplam Işın",
-                "Toplam Sekme (Vuruş) Sayısı",
-                "Vuruş Alan Benzersiz Üçgen Sayısı",
-                "Ortalama Gelme/Yansıma Açısı (°)",
-                "Minimum Açı (°)",
-                "Maksimum Açı (°)",
-                "Açı Varyansı",
-                "Standart Sapma",
-                "En Çok Darbe Alan Üçgen ID",
-                "En Yüksek Vuruş Sayısı",
-            ],
-            "Değer": [
-                total_sent_rays,
-                total_bounces,
-                len(active_indices),
-                round(float(np.mean(angles_only)), 4),
-                round(float(np.min(angles_only)), 4),
-                round(float(np.max(angles_only)), 4),
-                round(float(np.var(angles_only)), 4),
-                round(float(np.std(angles_only)), 4),
-                int(active_indices[np.argmax(hit_counts[active_indices])]),
-                int(np.max(hit_counts[active_indices])),
-            ]
-        }
-        df_summary = pd.DataFrame(summary_data)
-        for r_idx, row in enumerate(
-            [df_summary.columns.tolist()] + df_summary.values.tolist(), start=1
-        ):
-            for c_idx, val in enumerate(row, start=1):
-                ws2.cell(row=r_idx, column=c_idx, value=val)
-
-        # Üçgen bazlı detaylar sayfası
-        # Yansıma açısı: yansıma yasası gereği gelen=seken açısıdır (specular reflection).
-        # avg_angles zaten bu değeri tutuyor. Ancak resource_data varsa ve üçgen bazlı
-        # eşleme yapılabilirse, reflection_angles'dan üçgen ortalaması alınır;
-        # aksi hâlde gelen açı ile aynı değer (fiziksel olarak doğru) yazılır.
-        reflect_per_tri = avg_angles[active_indices]  # varsayılan: gelen = seken (yansıma yasası)
-
-        if (resource_data is not None
-                and "reflection_angles" in resource_data
-                and "reflection_tri_ids" in resource_data):
-            # Üçgen bazlı gerçek ortalama yansıma açısı
-            ref_angles_arr = np.array(resource_data["reflection_angles"])
-            ref_tri_ids    = np.array(resource_data["reflection_tri_ids"])
-            ref_sum   = np.zeros(len(hit_counts), dtype=np.float64)
-            ref_count = np.zeros(len(hit_counts), dtype=np.int32)
-            for k, tri_id in enumerate(ref_tri_ids):
-                if 0 <= tri_id < len(hit_counts):
-                    ref_sum[tri_id]   += ref_angles_arr[k]
-                    ref_count[tri_id] += 1
-            mask = ref_count[active_indices] > 0
-            reflect_per_tri = np.where(
-                mask,
-                ref_sum[active_indices] / np.maximum(ref_count[active_indices], 1),
-                avg_angles[active_indices]
-            )
-
-        ws3 = wb.create_sheet("Ucgen_Bazli_Detaylar")
+    # EXCEL SAYFA 2
+    
+    if len(active_indices) > 0:
+        ws2 = wb.create_sheet("Vurus_Alan_Ucgenler")
+        
         hit_data = {
-            "Ucgen_ID":              active_indices.tolist(),
-            "Vurus_Sayisi":          hit_counts[active_indices].tolist(),
-            "Ort_Gelis_Acisi_Deg":   [round(float(x), 4) for x in avg_angles[active_indices]],
-            "Ort_Yansima_Acisi_Deg": [round(float(x), 4) for x in reflect_per_tri],
+            "Üçgen ID": (active_indices + 1).tolist(),  # 1-based index
+            "Vuruş Sayısı": hit_counts[active_indices].tolist(),
+            "Ort. Gelme/Sekme Açısı (°)": [round(float(x), 4) for x in avg_angles[active_indices]],
         }
-        df_hits = pd.DataFrame(hit_data).sort_values(by="Vurus_Sayisi", ascending=False)
-        for r_idx, row in enumerate(
-            [df_hits.columns.tolist()] + df_hits.values.tolist(), start=1
-        ):
-            for c_idx, val in enumerate(row, start=1):
-                ws3.cell(row=r_idx, column=c_idx, value=val)
+        
+        # Pandas ile dataframe oluşturup vuruş sayısına göre azalan sırala
+        df_hits = pd.DataFrame(hit_data).sort_values(by="Vuruş Sayısı", ascending=False)
+        
+        # Tablo Tasarım Stilleri
+        header_fill = PatternFill(start_color="2B579A", end_color="2B579A", fill_type="solid")
+        header_font = Font(name="Segoe UI", size=10, bold=True, color="FFFFFF")
+        data_font = Font(name="Segoe UI", size=10)
+        align_center = Alignment(horizontal="center", vertical="center")
+        border_data = Border(
+            left=Side(style='thin', color='E0E0E0'), right=Side(style='thin', color='E0E0E0'),
+            top=Side(style='thin', color='E0E0E0'), bottom=Side(style='thin', color='E0E0E0')
+        )
+
+        # Başlıkları Yazdır
+        for c_idx, col_name in enumerate(df_hits.columns, start=1):
+            cell = ws2.cell(row=1, column=c_idx, value=col_name)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = align_center
+
+        # Verileri Yazdır
+        for r_idx, row_values in enumerate(df_hits.values, start=2):
+            # Durumsal Renklendirme fill mantığı (Açıya göre soft renk geçişi)
+            angle_val = row_values[2]
+            if angle_val < 30:
+                color_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid") # Soft Yeşil
+            elif angle_val < 60:
+                color_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid") # Soft Sarı
+            else:
+                color_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid") # Soft Kırmızı
+
+            for c_idx, val in enumerate(row_values, start=1):
+                cell = ws2.cell(row=r_idx, column=c_idx, value=val)
+                cell.font = data_font
+                cell.alignment = align_center
+                cell.border = border_data
+                if c_idx == 3:  # Sadece açı hücresini duruma göre renklendir (Tüm satırı boyayıp göz yormasın)
+                    cell.fill = color_fill
+
+        ws2.column_dimensions['A'].width = 15
+        ws2.column_dimensions['B'].width = 15
+        ws2.column_dimensions['C'].width = 25
 
     # Kaydet
     try:
         wb.save(filename)
-        print(f"[EXCEL] ✓ Başarıyla kaydedildi: {filename}")
-        print(f"[EXCEL]   {len(hit_counts):,} üçgen, {len(active_indices):,} çarpışma verisi yazıldı.")
+        print(f"[EXCEL] ✓ Temiz rapor başarıyla oluşturuldu: {filename}")
         return filename
     except Exception as e:
         print(f"[EXCEL] ✗ Kayıt hatası: {e}")
         return None
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 10. FONKSİYON ALIAS'LARI (Geriye dönük uyumluluk)
-# ══════════════════════════════════════════════════════════════════════════════
-# Yeni kod simulation_core_plucker modülünden bu isimleri kullanıyor
-plucker_method = precompute_plucker
-bvh_tree = build_bvh
